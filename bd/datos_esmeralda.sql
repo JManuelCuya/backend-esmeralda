@@ -39,6 +39,13 @@ insert into empleado value(null,'Yorleidis','Rondon','Hellbir','1992-05-12','Av.
 insert into empleado value(null,'Ramon','Dondon','Pavlidis','1992-05-12','Av. Ferro',1,'998563214','empleado026@gmail.com');
 insert into empleado value(null,'Perico','Pasado','Vuelos','1992-05-12','Av. Ferro',1,'998563214','empleado026@gmail.com');
 /*******************************************************/
+/************INSERTANDO PARA CENTRO DE COSTOS***********/
+/*******************************************************/
+insert into centro_costos value(null,'Cobranzas',1);
+insert into centro_costos value(null,'Facturacion',1);
+insert into centro_costos value(null,'Planeamiento',5);
+insert into centro_costos value(null,'Gerencia',6);
+/*******************************************************/
 /**INSERTANDO PARA ASIGNAR EMPLEADO AL CENTRO DE COSTOS*/
 /*******************************************************/
 insert into asignar_empleado value(null,1,1);
@@ -55,12 +62,6 @@ insert into usuarios value(null,'huatuco','123456',1,1);
 insert into usuarios value(null,'pavlidis','123',6,1);
 insert into usuarios value(null,'periqueao','123',7,1);
 /*******************************************************/
-/************INSERTANDO PARA USUARIOS ROLES**************/
-/*******************************************************/
-insert into usuario_rol value(null,1,1);
-insert into usuario_rol value(null,2,3);
-insert into usuario_rol value(null,4,2);
-/*******************************************************/
 /************INSERTANDO PARA ROLES**********************/
 /*******************************************************/
 insert into roles value(null,'Administrador');
@@ -71,12 +72,13 @@ insert into roles value(null,'Analista');
 insert into roles value(null,'Tecnico');
 insert into roles value(null,'Gerencia');
 /*******************************************************/
-/************INSERTANDO PARA CENTRO DE COSTOS***********/
+/************INSERTANDO PARA USUARIOS ROLES**************/
 /*******************************************************/
-insert into centro_costos value(null,'Cobranzas',1);
-insert into centro_costos value(null,'Facturacion',1);
-insert into centro_costos value(null,'Planeamiento',5);
-insert into centro_costos value(null,'Gerencia',6);
+insert into usuario_rol value(null,1,1);
+insert into usuario_rol value(null,2,3);
+insert into usuario_rol value(null,3,2);
+
+
 /*******************************************************/
 /************INSERTANDO PARA TIPO ATENCION**************/
 /*******************************************************/

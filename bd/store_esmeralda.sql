@@ -1,3 +1,4 @@
+use esmeralda_corp_bd;
 DELIMITER $$
 
 CREATE PROCEDURE sp_detalle_atencion(IN p_id INT)
@@ -16,7 +17,7 @@ BEGIN
     a.costo_estimado,
     /*a.estado*/
     a.fecha_registro,
-    a.id_estado
+    a.id_estado,
     a.fecha_ultima_actualizacion
   FROM atencion a
   INNER JOIN tipo_atencion ta ON a.id_tipo_atencion = ta.id

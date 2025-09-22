@@ -7,7 +7,12 @@ const {
     actualizarEstadoAtencion,
     marcarNotificacionesLeidas,
     obtenerAtencionesFinalizadas,
-    obtenerNotificaciones} = require("../controller/atencion.controller");
+    obtenerNotificaciones,
+    getAtencionesPorArea,
+    postCostoReal,
+    postAplicarAjuste,
+    getAreas
+} = require("../controller/atencion.controller");
 const {verificarToken} = require("../middleware/verificarToken");
 
 router.post("/atenciones", verificarToken, registrarAtencion);
@@ -17,5 +22,9 @@ router.patch("/atencion/:id", verificarToken, actualizarEstadoAtencion);
 router.get("/notificaciones", verificarToken, obtenerNotificaciones);
 router.patch("/notificaciones/leidas", verificarToken, marcarNotificacionesLeidas);
 router.get('/atenciones/finalizadas', verificarToken, obtenerAtencionesFinalizadas);
+router.get('/areas', getAreas);
+router.get('/atenciones-por-area', getAtencionesPorArea);
+router.post('/atencion/:id/costo-real', verificarToken, postCostoReal);
+router.post('/atencion/costeo/:id_hist/aplicar', verificarToken, postAplicarAjuste);
 
 module.exports = router;

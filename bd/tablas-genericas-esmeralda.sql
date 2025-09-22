@@ -1,3 +1,5 @@
+
+use esmeralda_corp_bd;
 create table departamentos(
 id int auto_increment primary key,
 descripcion varchar(150) not null

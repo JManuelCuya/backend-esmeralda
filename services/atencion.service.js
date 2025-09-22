@@ -168,6 +168,128 @@ const marcarNotificacionesComoLeidas = async (id_empleado) => {
   );
 };
 
+
+// ===== MÉTRICAS: Atenciones por área =====
+/** rango para un mes 'YYYY-MM' -> [start, end) */
+function monthRange(yyyymm) {
+  if (!/^\d{4}-\d{2}$/.test(yyyymm)) return null;
+  const start = `${yyyymm}-01`;
+  const [y, m] = yyyymm.split('-').map(Number);
+  const end = new Date(y, m, 1).toISOString().slice(0,10); // 1° del mes siguiente
+  return { start, end };
+}
+
+/** últimos N días terminando hoy -> [start, end) */
+function lastNDaysRange(days = 30) {
+  const end = new Date();
+  const start = new Date(end);
+  start.setDate(end.getDate() - Number(days));
+  return {
+    start: start.toISOString().slice(0,10),
+    end:   end.toISOString().slice(0,10)
+  };
+}
+
+/**
+ * Métrica: atenciones por área (cuenta por área)
+ * params:
+ *  - range: 'mes' | 'ultimos'
+ *  - mes: 'YYYY-MM' (si range='mes')
+ *  - dias: number (si range='ultimos')
+ *  - areaId: number (opcional: filtra una sola área)
+ *  - soloFinalizadas: boolean (opcional: id_estado=4)
+ *  - usarFechaCierre: boolean (opcional: usa fecha_atencion_fin para el rango)
+ */
+// ================== MÉTRICA: Atenciones por área ==================
+const atencionesPorArea = async (query = {}) => {
+  // 1) Normalización de parámetros (acepta ambos nombres)
+  const q = query;
+
+  // range: 'mes'|'ultimos' (front) o 'm'|'n' (legacy)
+  const rangeIn = String(q.range || q.r || '').toLowerCase();
+  const range = (rangeIn === 'ultimos' || rangeIn === 'n') ? 'ultimos' : 'mes';
+
+  // mes / month: 'YYYY-MM'
+  const mes = q.mes || q.month || '';
+
+  // dias / days
+  const dias = Number(q.dias || q.days || 30);
+
+  // área: area_id (front) o areaId (legacy)
+  const areaId = q.area_id || q.areaId || '';
+
+  // solo finalizadas: soloFinalizadas=1 | onlyClosed=1
+  const soloFinalizadas = (q.soloFinalizadas === '1') || (q.onlyClosed === '1') ||
+                          (q.soloFinalizadas === true) || (q.onlyClosed === true);
+
+  // usar fecha de cierre: usarFechaCierre=1 | useClose=1
+  const usarFechaCierre = (q.usarFechaCierre === '1') || (q.useClose === '1') ||
+                          (q.usarFechaCierre === true) || (q.useClose === true);
+
+  // 2) Calcular rango de fechas (YYYY-MM-DD), INCLUYENDO el día final
+  let start, end;
+
+  if (range === 'ultimos') {
+    const n = Math.max(1, dias || 30);
+    const today = new Date();
+    const startDate = new Date(today);
+    // incluye hoy + (n - 1) días atrás
+    startDate.setUTCDate(today.getUTCDate() - (n - 1));
+    start = startDate.toISOString().slice(0, 10);
+    end   = today.toISOString().slice(0, 10);
+  } else {
+    const mm = mes || new Date().toISOString().slice(0, 7); // por defecto mes actual
+    const [y, m] = mm.split('-').map(Number);
+    if (!y || !m) throw new Error("Parámetro 'mes' inválido (YYYY-MM)");
+    const first = new Date(Date.UTC(y, m - 1, 1));
+    const next  = new Date(Date.UTC(y, m, 1));
+    const last  = new Date(next.getTime() - 86400000); // último día del mes
+    start = first.toISOString().slice(0, 10);
+    end   = last.toISOString().slice(0, 10);
+  }
+
+  // 3) WHERE dinámico
+  const fechaCol = usarFechaCierre ? 'a.fecha_atencion_fin' : 'a.fecha_atencion';
+  const where = [`${fechaCol} BETWEEN ? AND ?`];  // inclusivo
+  const params = [start, end];
+
+  if (soloFinalizadas) where.push(`a.id_estado = 4`);
+  if (areaId) { where.push(`ar.id = ?`); params.push(areaId); }
+
+  // 4) Consulta
+  const [rows] = await pool.query(
+    `
+    SELECT
+      ar.id          AS area_id,
+      ar.descripcion AS area,
+      COUNT(*)       AS total
+    FROM atencion a
+    JOIN centro_costos cc ON cc.id = a.id_centro_costos
+    JOIN area         ar ON ar.id = cc.id_area
+    WHERE ${where.join(' AND ')}
+    GROUP BY ar.id, ar.descripcion
+    ORDER BY total DESC
+    `,
+    params
+  );
+
+  // 5) Respuesta en el formato que usa tu front
+  return {
+    rows,
+    start,
+    end,
+    range,                 // 'mes' | 'ultimos'
+    dias: range === 'ultimos' ? dias : undefined
+  };
+};
+
+// (opcional) para llenar el combo Área
+const listarAreas = async () => {
+  const [rows] = await pool.query(`SELECT id, descripcion FROM area ORDER BY descripcion`);
+  return rows;
+};
+
+
 module.exports = { 
   guardarAtencion,
   listarAtenciones,
@@ -179,5 +301,8 @@ module.exports = {
   guardarNotificacion,
   listarNotificacionesPorEmpleado,
   marcarNotificacionesComoLeidas,
-  listarAtencionesFinalizadas
+  listarAtencionesFinalizadas,
+  atencionesPorArea,
+  listarAreas
+
 };
