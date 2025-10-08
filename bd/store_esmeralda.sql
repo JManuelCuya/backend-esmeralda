@@ -18,7 +18,8 @@ BEGIN
     /*a.estado*/
     a.fecha_registro,
     a.id_estado,
-    a.fecha_ultima_actualizacion
+    a.fecha_ultima_actualizacion,
+    a.costo_real
   FROM atencion a
   INNER JOIN tipo_atencion ta ON a.id_tipo_atencion = ta.id
   INNER JOIN empleado e ON a.id_empleado = e.id
@@ -35,6 +36,6 @@ DELIMITER ;
       DATE_FORMAT(a.fecha_ultima_actualizacion, '%d/%m/%Y %H:%i:%s') AS fecha_actualizacion_formateada
     FROM atencion a
     INNER JOIN estado_atencion ta ON ta.id = a.id_tipo_atencion 
-    WHERE a.id = 3
+    WHERE a.id = 3;
 
 call sp_detalle_atencion(1)

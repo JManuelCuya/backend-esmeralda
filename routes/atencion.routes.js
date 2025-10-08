@@ -1,6 +1,6 @@
 const express = require("express");
 const router = express.Router();
-const { 
+const {
     registrarAtencion,
     obtenerAtenciones,
     renderDetalleAtencion,
@@ -9,11 +9,12 @@ const {
     obtenerAtencionesFinalizadas,
     obtenerNotificaciones,
     getAtencionesPorArea,
+    cerrarAtencion,
     postCostoReal,
     postAplicarAjuste,
     getAreas
 } = require("../controller/atencion.controller");
-const {verificarToken} = require("../middleware/verificarToken");
+const { verificarToken } = require("../middleware/verificarToken");
 
 router.post("/atenciones", verificarToken, registrarAtencion);
 router.get("/listar_atenciones", verificarToken, obtenerAtenciones);
@@ -24,7 +25,8 @@ router.patch("/notificaciones/leidas", verificarToken, marcarNotificacionesLeida
 router.get('/atenciones/finalizadas', verificarToken, obtenerAtencionesFinalizadas);
 router.get('/areas', getAreas);
 router.get('/atenciones-por-area', getAtencionesPorArea);
-router.post('/atencion/:id/costo-real', verificarToken, postCostoReal);
-router.post('/atencion/costeo/:id_hist/aplicar', verificarToken, postAplicarAjuste);
+router.patch("/atenciones/:id/cierre", verificarToken, cerrarAtencion);
+//router.post('/atencion/:id/costo-real', verificarToken, postCostoReal);
+//router.post('/atencion/costeo/:id_hist/aplicar', verificarToken, postAplicarAjuste);
 
 module.exports = router;

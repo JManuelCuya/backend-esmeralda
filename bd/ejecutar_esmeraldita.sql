@@ -18,9 +18,8 @@ select * from atencion;
 select * from tb_categoria;
 select * from stock;
 select * from notificaciones;
-drop table notificaciones;
-
-
+select * from atencion_costeo_hist;
+select * from tarifa_tipo_atencion;
 SELECT ar.id            AS area_id,
        ar.descripcion   AS area,
        COUNT(*)         AS total
@@ -32,3 +31,5 @@ WHERE a.fecha_atencion >= DATE_FORMAT(CURDATE(), '%Y-%m-01')
 -- AND a.id_estado = 4   -- descomenta si quieres solo "Finalizadas"
 GROUP BY ar.id, ar.descripcion
 ORDER BY total DESC;
+
+

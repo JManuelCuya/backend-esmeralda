@@ -127,7 +127,12 @@ CREATE TABLE atencion (
 );
 
 ALTER TABLE atencion ADD fecha_ultima_actualizacion DATETIME;
+ALTER TABLE atencion
+  MODIFY COLUMN hora_fin TIME NULL;
 
+-- (opcional, por si en algún momento quedó NOT NULL)
+ALTER TABLE atencion
+  MODIFY COLUMN fecha_atencion_fin DATE NULL;
 
 CREATE TABLE atencion_costeo_hist (
   id               BIGINT AUTO_INCREMENT PRIMARY KEY,
@@ -171,6 +176,7 @@ ALTER TABLE atencion_costeo_hist
   NOT NULL DEFAULT 'ml' AFTER modelo_version;
 
 SHOW COLUMNS FROM atencion_costeo_hist;
+
 ALTER TABLE atencion_costeo_hist
   MODIFY id BIGINT NOT NULL AUTO_INCREMENT,
   MODIFY id_atencion INT NOT NULL,
@@ -216,7 +222,79 @@ ALTER TABLE atencion
 ADD COLUMN id_estado INT,
 ADD CONSTRAINT fk_atencion_estado
   FOREIGN KEY (id_estado)
-  REFERENCES estado_atencion(id)
+  REFERENCES estado_atencion(id);
+  
+  ALTER TABLE atencion ADD COLUMN costo_real DECIMAL(10,2) NULL;
+
+
+CREATE TABLE tarifa_tipo_atencion (
+  id                INT AUTO_INCREMENT PRIMARY KEY,
+  id_tipo_atencion  INT NOT NULL,
+  id_area           INT NULL,
+  id_centro_costos  INT NULL,
+  unidad            ENUM('HORA','CASO') NOT NULL DEFAULT 'HORA',
+  precio_base       DECIMAL(10,2) NOT NULL,
+  factor_min        DECIMAL(5,2)  DEFAULT 0.80,   -- piso (80% base)
+  factor_max        DECIMAL(5,2)  DEFAULT 1.20,   -- techo (120% base)
+  fecha_inicio      DATE NOT NULL,
+  fecha_fin         DATE NULL,
+  version           VARCHAR(20) DEFAULT 'v1',
+  activo            TINYINT(1) DEFAULT 1,
+  FOREIGN KEY (id_tipo_atencion) REFERENCES tipo_atencion(id),
+  FOREIGN KEY (id_area)          REFERENCES area(id),
+  FOREIGN KEY (id_centro_costos) REFERENCES centro_costos(id),
+  INDEX (id_tipo_atencion, id_area, id_centro_costos, activo, fecha_inicio, fecha_fin)
+) ENGINE=InnoDB;
+
+
+
+-- A) Nuevas columnas para registrar duración y separar unitario vs total
+ALTER TABLE atencion_costeo_hist
+  ADD COLUMN duracion_min INT NULL AFTER modelo_version,
+  ADD COLUMN costo_predicho_unit DECIMAL(10,2) NULL AFTER duracion_min,
+  ADD COLUMN costo_predicho_total DECIMAL(10,2) NULL AFTER costo_predicho_unit;
+
+-- B) Re-definir las columnas generadas para que usen el TOTAL
+ALTER TABLE atencion_costeo_hist
+  MODIFY COLUMN error_abs DECIMAL(10,2)
+    AS (IF(costo_real IS NULL OR costo_predicho_total IS NULL,
+           NULL, ABS(costo_real - costo_predicho_total))) STORED,
+  MODIFY COLUMN error_pct DECIMAL(8,5)
+    AS (IF(costo_real IS NULL OR costo_predicho_total IS NULL OR costo_predicho_total=0,
+           NULL, (costo_real - costo_predicho_total)/costo_predicho_total)) STORED;
+
+
+CREATE TABLE atencion_detalle (
+  id              BIGINT AUTO_INCREMENT PRIMARY KEY,
+  id_atencion     INT NOT NULL,
+  id_stock        INT NOT NULL,
+  cantidad        DECIMAL(10,2) NOT NULL CHECK (cantidad > 0),
+  precio_unitario DECIMAL(10,2) NOT NULL,           -- snapshot del precio en el momento
+  subtotal        DECIMAL(10,2) AS (cantidad * precio_unitario) STORED,
+  -- opcional: impuestos/desc.
+  impuesto_pct    DECIMAL(5,2)  NULL,
+  descuento_pct   DECIMAL(5,2)  NULL,
+  total_linea     DECIMAL(10,2) AS (
+    ROUND(
+      (cantidad * precio_unitario)
+      * (1 - IFNULL(descuento_pct,0)/100)
+      * (1 + IFNULL(impuesto_pct ,0)/100),
+      2
+    )
+  ) STORED,
+
+  -- auditoría
+  creado_en       DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  creado_por      INT NULL,
+
+  CONSTRAINT fk_det_atencion FOREIGN KEY (id_atencion) REFERENCES atencion(id),
+  CONSTRAINT fk_det_stock    FOREIGN KEY (id_stock)    REFERENCES stock(id)
+);
+
+-- Índices recomendados
+CREATE INDEX idx_det_atencion ON atencion_detalle (id_atencion);
+CREATE INDEX idx_det_stock    ON atencion_detalle (id_stock);
+
   
   
   

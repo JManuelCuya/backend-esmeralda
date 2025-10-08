@@ -1,5 +1,4 @@
-const {
-  guardarAtencion,
+const { guardarAtencion,
   listarAtenciones,
   listarAtencionesPorEmpleado,
   obtenerDetalleAtencion,
@@ -11,22 +10,34 @@ const {
   listarAtencionesFinalizadas,
   atencionesPorArea,
   listarAreas,
-  marcarNotificacionesComoLeidas,
-} = require("../services/atencion.service");
-
-const {
-  registrarPrediccion,
-  aplicarAjuste,
-} = require("../services/costeo.service");
+  finalizarAtencion,
+  finalizarAtencionAutoCosto,
+  crearAtencionConDetalle,
+  marcarNotificacionesComoLeidas } = require("../services/atencion.service");
 const pool = require("../config/db");
 
 const registrarAtencion = async (req, res) => {
-  let cn;
   try {
-    cn = await pool.getConnection();
-    await cn.beginTransaction();
+    const { centro_costos_id, tipo_atencion_id, fecha_atencion, fecha_atencion_fin, hora_inicio, hora_fin, motivo, observacion, costo_estimado } = req.body;
+    const empleado_id = req.user.empleado_id;
 
-    const {
+    // Obtener el nombre del centro de costos
+    const [rows] = await pool.query(
+      "SELECT descripcion FROM centro_costos WHERE id = ?",
+      [centro_costos_id]
+    );
+
+    const descripcionCentro = rows[0]?.descripcion?.toLowerCase() || "";
+
+    // Determinar la prioridad (1: Alta, 2: Media, 3: Baja)
+    let id_prioridad = 2; // Media por defecto
+    if (descripcionCentro.includes("gerencia")) {
+      id_prioridad = 1; // Alta
+    }
+    let estadoAtencion = "creado";
+    let estadoCodigo = 1;
+    // Llamamos a la función guardarAtencion y guardamos el ID de la atención
+    const idAtencion = await guardarAtencion({
       centro_costos_id,
       tipo_atencion_id,
       fecha_atencion,
@@ -35,87 +46,52 @@ const registrarAtencion = async (req, res) => {
       hora_fin,
       motivo,
       observacion,
-      costo_estimado, // predicho (puede venir null)
-    } = req.body;
+      costo_estimado,
+      empleado_id,
+      estado: estadoAtencion,
+      id_prioridad,
+      id_estado: estadoCodigo
+    });
 
-    const empleado_id = req.user.empleado_id || null; // dueño de la atención
-    const usuario_id = req.user.id || null;          // id de usuarios (si lo tienes)
-
-    // 1) prioridad por centro de costos (simple)
-    const [ccRows] = await cn.query(
-      "SELECT descripcion FROM centro_costos WHERE id = ?",
-      [centro_costos_id]
-    );
-    const descripcionCentro = (ccRows[0]?.descripcion || "").toLowerCase();
-    let id_prioridad = 2; // Media
-    if (descripcionCentro.includes("gerencia")) id_prioridad = 1; // Alta
-
-    // 2) estados
-    const estadoAtencion = "creado";
-    const estadoCodigo = 1;
-
-    // 3) insertar atención
-    const [insAt] = await cn.query(
-      `INSERT INTO atencion
-         (id_tipo_atencion, id_empleado, id_centro_costos,
-          fecha_atencion, fecha_atencion_fin, hora_inicio, hora_fin,
-          motivo, observacion, estado, costo_estimado, id_prioridad, id_estado)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-      [
-        tipo_atencion_id, empleado_id, centro_costos_id,
-        fecha_atencion, fecha_atencion_fin, hora_inicio, hora_fin,
-        motivo, observacion, estadoAtencion, (costo_estimado ?? null),
-        id_prioridad, estadoCodigo
-      ]
-    );
-    const idAtencion = insAt.insertId;
-
-    // 4) historial de costeo: NO insertar columnas generadas (error_abs/error_pct)
-    //    y NO usar 'fuente_prediccion' (no existe en tu tabla actual).
-    if (costo_estimado != null) {
-      await cn.query(
-        `INSERT INTO atencion_costeo_hist
-           (id_atencion, costo_predicho, costo_real, error_rel, aplicado,
-            modelo_id, modelo_version, usuario_id)
-         VALUES (?, ?, NULL, NULL, 0, ?, ?, ?)`,
-        [
-          idAtencion,
-          costo_estimado,
-          'ml',                                 // modelo_id (ajústalo a tu necesidad)
-          process.env.MODEL_VERSION || 'v1',    // modelo_version
-          usuario_id
-        ]
-      );
-    }
-
-    await cn.commit();
+    // Enviamos el ID generado al frontend
     res.status(201).json({ message: "Atención registrada correctamente", id: idAtencion });
+
   } catch (err) {
-    if (cn) try { await cn.rollback(); } catch { }
     console.error("Error al registrar atención:", err);
     res.status(500).json({ message: "Error interno del servidor" });
-  } finally {
-    if (cn) cn.release();
   }
 };
-
+const postAtencion = async (req, res) => {
+  try {
+    const result = await crearAtencionConDetalle({
+      payload: req.body,
+      user: req.user,             // viene del middleware de auth
+    });
+    res.status(201).json({ message: "Atención registrada", id: result.id });
+  } catch (err) {
+    console.error("postAtencion:", err);
+    res.status(500).json({ message: "Error al registrar atención" });
+  }
+};
 const obtenerAtenciones = async (req, res) => {
   try {
     const { rol, empleado_id } = req.user;
-    const data = (rol === "Administrador")
+
+    const data = rol === "Administrador"
       ? await listarAtenciones()
       : await listarAtencionesPorEmpleado(empleado_id);
+
     res.json(data);
   } catch (err) {
     console.error("Error al listar atenciones:", err);
     res.status(500).json({ message: "Error interno del servidor" });
   }
 };
-
 const obtenerAtencionesFinalizadas = async (req, res) => {
   try {
     const page = Number(req.query.page || 1);
     const limit = Number(req.query.limit || 50);
+
     const data = await listarAtencionesFinalizadas({ page, limit });
     res.json(data);
   } catch (err) {
@@ -123,37 +99,52 @@ const obtenerAtencionesFinalizadas = async (req, res) => {
     res.status(500).json({ message: "Error interno del servidor" });
   }
 };
-
 const renderDetalleAtencion = async (req, res) => {
   try {
     const { id } = req.query;
     const detalle = await obtenerDetalleAtencion(id);
-    if (!detalle) return res.status(404).json({ mensaje: "Atención no encontrada" });
+
+    if (!detalle) {
+      return res.status(404).json({ mensaje: "Atención no encontrada" });
+    }
+
     res.json(detalle);
   } catch (error) {
     console.error("Error al obtener detalle de atención:", error);
     res.status(500).json({ mensaje: "Error al procesar la solicitud" });
   }
 };
-
 const actualizarEstadoAtencion = async (req, res) => {
   const { id } = req.params;
   const { id_estado } = req.body;
+  const { id_atencion } = req.body;
+
+  console.log("mis id son ", id, id_estado, id_atencion)
 
   try {
     await actualizarEstado(id_estado, id);
-    const atencion = await obtenerAtencionPorId(id);
+
+    // Aquí debes obtener los datos de la atención
+    const atencion = await obtenerAtencionPorId(id); // 👈 Esta línea nueva
+
+    console.log("mi atencion es", atencion)
 
     const mensaje = `Tu atención #${id} ha sido actualizada a "${atencion.descripcion}"`;
+
     await guardarNotificacion(atencion.id_empleado, mensaje);
 
+
     const io = req.app.get("io");
+
+
+    console.log("atencion obtenida", atencion);
+
     io.emit("estadoActualizado", {
-      id_atencion: parseInt(id, 10),
+      id_atencion: parseInt(id),
       nuevo_estado: id_estado,
       id_estado,
-      id_empleado: atencion.id_empleado,
-      estado: await obtenerNombreEstado(id_estado)
+      id_empleado: atencion.id_empleado, // 👈 importante para filtrar en frontend
+      estado: await obtenerNombreEstado(id_estado) // opcional para mostrar nombre
     });
 
     res.json({ message: "Estado actualizado correctamente" });
@@ -162,9 +153,10 @@ const actualizarEstadoAtencion = async (req, res) => {
     res.status(500).json({ message: "Error al actualizar estado" });
   }
 };
-
 const obtenerNotificaciones = async (req, res) => {
-  const id_empleado = req.user.empleado_id;
+  const id_empleado = req.user.empleado_id
+  console.log("🔔 Obteniendo notificaciones para empleado ID:", id_empleado);
+
   if (!id_empleado) return res.status(400).json({ error: "Empleado no identificado" });
 
   try {
@@ -175,9 +167,8 @@ const obtenerNotificaciones = async (req, res) => {
     res.status(500).json({ error: "Error interno" });
   }
 };
-
 const marcarNotificacionesLeidas = async (req, res) => {
-  const id_empleado = req.user.empleado_id;
+  const id_empleado = req.user.empleado_id
   try {
     await marcarNotificacionesComoLeidas(id_empleado);
     res.json({ ok: true });
@@ -186,57 +177,42 @@ const marcarNotificacionesLeidas = async (req, res) => {
     res.status(500).json({ error: "Error interno" });
   }
 };
-
 const getAtencionesPorArea = async (req, res) => {
   try {
     const data = await atencionesPorArea(req.query);
     res.json(data);
   } catch (err) {
-    console.error("getAtencionesPorArea error:", err);
-    res.status(400).json({ message: err.message || "Error en métrica" });
+    console.error('getAtencionesPorArea error:', err);
+    res.status(400).json({ message: err.message || 'Error en métrica' });
   }
 };
-
 const getAreas = async (req, res) => {
   try {
     const rows = await listarAreas();
     res.json(rows);
   } catch (e) {
     console.error(e);
-    res.status(500).json({ message: "Error listando áreas" });
+    res.status(500).json({ message: 'Error listando áreas' });
   }
 };
 
-// ——— endpoints opcionales (si usas la tabla de costeo) ———
-async function postCostoReal(req, res) {
+const cerrarAtencion = async (req, res) => {
   try {
     const id_atencion = Number(req.params.id);
-    const { costo_real } = req.body;
-    const usuario_id = req.user?.empleado_id || null;
+    const { fecha_atencion_fin, hora_fin } = req.body;
 
-    const result = await registrarCostoReal({
-      id_atencion,
-      costo_real: Number(costo_real),
-      usuario_id
-    });
-
-    res.json({ ok: true, ...result });
+    if (!id_atencion) return res.status(400).json({ message: "id inválido" });
+    if (!fecha_atencion_fin || !hora_fin) {
+      return res.status(400).json({ message: "fecha_atencion_fin y hora_fin son requeridos" });
+    }
+    const r = await finalizarAtencion({ id_atencion, fecha_atencion_fin, hora_fin });
+    res.json(r);
   } catch (err) {
-    console.error(err);
-    res.status(500).json({ ok: false, message: err.message });
+    console.error("cerrarAtencion:", err);
+    res.status(500).json({ message: err.message || "Error al cerrar atención" });
   }
-}
+};
 
-async function postAplicarAjuste(req, res) {
-  try {
-    const id_hist = Number(req.params.id_hist);
-    const r = await aplicarAjuste({ id_hist });
-    res.json({ ok: true, ...r });
-  } catch (err) {
-    console.error(err);
-    res.status(500).json({ ok: false, message: err.message });
-  }
-}
 
 module.exports = {
   registrarAtencion,
@@ -248,6 +224,6 @@ module.exports = {
   obtenerAtencionesFinalizadas,
   getAtencionesPorArea,
   getAreas,
-  postCostoReal,
-  postAplicarAjuste,
+  cerrarAtencion,
+  postAtencion
 };
